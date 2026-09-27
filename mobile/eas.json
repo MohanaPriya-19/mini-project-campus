@@ -1,0 +1,12 @@
+{
+  "cli": { "version": ">= 23.2.0", "appVersionSource": "remote" },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://10.198.175.128:5001"
+      }
+    }
+  }
+}

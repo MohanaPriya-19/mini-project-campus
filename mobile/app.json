@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "Campus Infrastructure Sustainability Reporter",
+    "slug": "campus-grievance-new",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a3c6e"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "edu.psgtech.grievance.reporter"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a3c6e"
+      },
+      "package": "edu.psgtech.grievance.reporter",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Campus Infrastructure Sustainability Reporter needs your location to verify you are on campus before submitting a complaint."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Campus Infrastructure Sustainability Reporter to access your photos to attach complaint images.",
+          "cameraPermission": "Allow Campus Infrastructure Sustainability Reporter to use your camera to capture complaint images."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      "expo-font"
+    ],
+    "owner": "campus-19",
+    "extra": {
+      "eas": {
+        "projectId": "a26734cb-d2b8-4193-8ebd-87eaba1dc0f7"
+      }
+    }
+  }
+}
