@@ -89,9 +89,9 @@ async function validateSemantic(filePath, description, category, options = {}) {
       return {
         ...result,
         isRelevant: result.valid,
-        level: result.valid ? 'HIGH' : 'LOW',
+        level: result.reviewRequired ? 'MEDIUM' : result.valid ? 'HIGH' : 'LOW',
         status: result.valid ? 'VALID' : 'INVALID',
-        flaggedForReview: !result.valid,
+        flaggedForReview: !result.valid || Boolean(result.reviewRequired),
         validationAvailable: true,
       }
     } catch (err) {

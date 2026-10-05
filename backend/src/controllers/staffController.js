@@ -213,15 +213,18 @@ async function uploadResolutionProof(req, res, next) {
 
     // Resolution proof must be captured from the PSG campus and verified on
     // the server; browser-side geolocation alone is never trusted.
-    const locationResult = verifyLocation(parseFloat(latitude), parseFloat(longitude), gpsAccuracy)
+    const locationResult = verifyLocation(parseFloat(latitude), parseFloat(longitude), gpsAccuracy, {
+      maxAccuracyMeters: Number(process.env.STAFF_GPS_MAX_ACCURACY_METERS || 250),
+    })
     if (!locationResult.locationVerified) {
       return res.status(400).json({ success: false, message: locationResult.message })
     }
 
     const complaint = await Complaint.findById(assignment.complaintId).populate('categoryId', 'name')
     if (!complaint) return res.status(404).json({ success: false, message: 'Complaint not found.' })
-    const proofDescription = `Original complaint: ${complaint.description}. Staff resolution note: ${resolutionNote.trim()}`
-    const proofValidation = await validateSemantic(req.file.path, proofDescription, complaint.categoryId.name, { purpose: 'resolution' })
+    const proofValidation = await validateSemantic(req.file.path, resolutionNote.trim(), complaint.categoryId.name, {
+      purpose: 'resolution', originalDescription: complaint.description,
+    })
     if (!proofValidation.valid) {
       return res.status(422).json({ success: false, message: proofValidation.reason || 'The resolution proof does not appear to match this complaint.', validation: proofValidation })
     }

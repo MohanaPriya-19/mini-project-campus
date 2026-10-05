@@ -8,7 +8,7 @@ import Logo from './Logo'
 const NAV_ITEMS = [
   { to: '/', label: 'Complaints', enabled: true, roles: ['admin', 'staff'] },
   { to: '/maintenance', label: 'Maintenance', enabled: true, roles: ['admin'] },
-  { to: '/awareness', label: 'Awareness Events', enabled: true, roles: ['admin'] },
+  { to: '/awareness', label: 'Sustainability Events', enabled: true, roles: ['admin'] },
   { to: '/rca', label: 'RCA insights', enabled: true, roles: ['admin'] },
   { to: '/reports', label: 'Reports', enabled: true, roles: ['admin'] },
   { to: '/notifications', label: 'Notifications', enabled: true, roles: ['admin', 'staff'] },

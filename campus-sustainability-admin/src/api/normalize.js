@@ -38,10 +38,13 @@ export function normalizeComplaint(c) {
     Overdue: 'overdue', 'Unable to Resolve': 'unable_to_resolve', Reassigned: 'reassigned',
     'Deadline Extended': 'deadline_extended', Closed: 'closed', Repetitive: 'repetitive',
   }
+  const status = statusMap[c.status] || c.status
   const assignment = c.assignment || null
   const attachments = c.attachments || []
   const complaintPhoto = attachments.find((item) => item.attachmentType === 'complaint_photo')
   const resolutionProof = attachments.find((item) => item.attachmentType === 'resolution_photo')
+  const related = c.relatedComplaint || null
+  const relatedPhoto = (c.relatedComplaintAttachments || []).find((item) => item.attachmentType === 'complaint_photo')
   return {
     id: idOf(c),
     title: c.title || c.categoryId?.name || 'Campus complaint',
@@ -51,10 +54,15 @@ export function normalizeComplaint(c) {
     photoUrl: c.photoUrl || complaintPhoto?.fileUrl || null,
     reportedBy: formatReporter(c.reportedBy || c.studentId),
     reportedAt: c.reportedAt || c.createdAt,
-    status: statusMap[c.status] || c.status,
+    status,
     priority: c.priority,
     token: c.token || c.tokenId || null,
-    assignedTo: idOf(c.assignedTo || assignment?.staffId),
+    // The assignment document is the source of truth. Complaint-level
+    // assignedTo values may be stale legacy data and must not appear as an
+    // assignment before an administrator actually assigns the complaint.
+    assignedTo: ['assigned', 'in_progress', 'overdue', 'reassigned', 'deadline_extended', 'resolved', 'closed', 'unable_to_resolve'].includes(status)
+      ? idOf(assignment?.staffId)
+      : null,
     assignmentId: idOf(c.assignmentId || assignment),
     deadline: c.deadline || assignment?.deadline || null,
     deadlineExtensions: assignment?.deadlineExtensions || [],
@@ -62,7 +70,13 @@ export function normalizeComplaint(c) {
     resolutionProofUrl: c.resolutionProofUrl || resolutionProof?.fileUrl || null,
     unableToResolveReason: assignment?.unableToResolveReason || null,
     rejectionReason: c.rejectionReason || null,
-    isRepetitive: Boolean(c.isRepetitive), relatedComplaintId: idOf(c.relatedComplaintId), repetitiveCount: c.repetitiveCount || 0,
+    isRepetitive: Boolean(c.isRepetitive), duplicateSuppressed: Boolean(c.duplicateSuppressed), relatedComplaintId: idOf(c.relatedComplaintId), repetitiveCount: c.repetitiveCount || 0,
+    relatedComplaint: related ? {
+      id: idOf(related), category: related.categoryId?.name || '', location: related.locationDescription || 'Not provided',
+      description: related.description || '', status: statusMap[related.status] || related.status,
+      photoUrl: relatedPhoto?.fileUrl || null, reportedAt: related.createdAt,
+    } : null,
+    photoUrl: c.photoUrl || complaintPhoto?.fileUrl || null,
     history: (c.history || []).map((h) => ({ status: statusMap[h.status] || h.status, at: h.at || h.createdAt, by: h.by || h.changedBy, note: h.note })),
   }
 }

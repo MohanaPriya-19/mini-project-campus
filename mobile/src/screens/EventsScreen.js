@@ -48,8 +48,8 @@ export default function EventsScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Campus Events</Text>
-        <Text style={styles.headerSub}>Sustainability & Awareness</Text>
+        <Text style={styles.headerTitle}>Sustainability Events</Text>
+        <Text style={styles.headerSub}>Campus programs and activities</Text>
       </View>
 
       {error && (
@@ -67,8 +67,8 @@ export default function EventsScreen({ navigation }) {
         ListEmptyComponent={
           <View style={styles.emptyBox}>
             <Ionicons name="calendar-outline" size={48} color={COLORS.textSecondary} />
-            <Text style={styles.emptyTitle}>No Events</Text>
-            <Text style={styles.emptyText}>No upcoming events at the moment. Check back later.</Text>
+            <Text style={styles.emptyTitle}>No Sustainability Events</Text>
+            <Text style={styles.emptyText}>No upcoming sustainability events at the moment. Check back later.</Text>
           </View>
         }
         renderItem={({ item }) => {

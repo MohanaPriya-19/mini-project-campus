@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator')
 const { v4: uuidv4 } = require('uuid')
-const path = require('path')
+const mongoose = require('mongoose')
+const fs = require('fs/promises')
 const Complaint = require('../models/Complaint')
 const ComplaintAttachment = require('../models/ComplaintAttachment')
 const ComplaintStatusHistory = require('../models/ComplaintStatusHistory')
@@ -14,6 +15,44 @@ const ComplaintAssignment = require('../models/ComplaintAssignment')
 const Notification = require('../models/Notification')
 const { ACTIVE_STATUSES, findRepetitiveComplaint } = require('../services/repetitiveComplaintService')
 
+async function removeUploadedFile(file) {
+  if (file?.path) await fs.unlink(file.path).catch(() => {})
+}
+
+async function getIssueSummary(complaint, categoryName) {
+  if (!complaint) return null
+  const attachment = await ComplaintAttachment.findOne({ complaintId: complaint._id, attachmentType: 'complaint_photo' })
+    .select('fileUrl').lean()
+  return {
+    id: complaint._id,
+    category: categoryName || complaint.categoryId?.name || 'Campus issue',
+    description: complaint.description,
+    imageUrl: attachment?.fileUrl || null,
+    status: complaint.status,
+    reportedAt: complaint.createdAt,
+  }
+}
+
+function submittedResponse(complaint, { message, duplicate = false, duplicateType, existingIssue } = {}) {
+  return {
+    success: true,
+    message: message || 'Complaint submitted successfully. Awaiting administrator verification.',
+    duplicate,
+    ...(duplicateType ? { duplicateType } : {}),
+    ...(existingIssue ? { existingIssue } : {}),
+    complaint: {
+      id: complaint._id,
+      status: complaint.status,
+      priority: complaint.priority,
+      imageValidation: complaint.imageValidation?.flaggedForReview
+        ? { flaggedForReview: true, reason: complaint.imageValidation.reason }
+        : { flaggedForReview: false },
+      isRepetitive: Boolean(complaint.isRepetitive),
+      relatedComplaintId: complaint.relatedComplaintId || null,
+    },
+  }
+}
+
 // POST /api/complaints
 async function submitComplaint(req, res, next) {
   try {
@@ -23,6 +62,32 @@ async function submitComplaint(req, res, next) {
     }
 
     const { categoryId, description, latitude, longitude, gpsAccuracy, locationDescription } = req.body
+    const idempotencyKey = String(req.get('Idempotency-Key') || '').trim().slice(0, 100)
+
+    // A request can reach the database while its response is lost on mobile.
+    // Return that saved result for retries instead of creating another record.
+    const student = await Student.findOne({ userId: req.user._id })
+    if (!student) {
+      return res.status(403).json({ success: false, message: 'Student profile not found.' })
+    }
+    if (idempotencyKey) {
+      const prior = await Complaint.findOne({ studentId: student._id, idempotencyKey }).lean()
+      if (prior) {
+        await removeUploadedFile(req.file)
+        const related = prior.isRepetitive
+          ? await Complaint.findById(prior.relatedComplaintId).populate('categoryId', 'name').lean()
+          : null
+        const existingIssue = related ? await getIssueSummary(related, related.categoryId?.name).catch(() => null) : null
+        return res.status(200).json(submittedResponse(prior, {
+          message: prior.isRepetitive
+            ? 'This issue has already been reported by another student, and it is being looked into.'
+            : 'Your complaint was submitted successfully and is awaiting administrator verification.',
+          duplicate: Boolean(prior.isRepetitive),
+          duplicateType: prior.isRepetitive ? 'other_reporter' : undefined,
+          existingIssue,
+        }))
+      }
+    }
     const lat = parseFloat(latitude)
     const lng = parseFloat(longitude)
 
@@ -47,12 +112,6 @@ async function submitComplaint(req, res, next) {
       return res.status(400).json({ success: false, message: 'Invalid issue category.' })
     }
 
-    // Student lookup
-    const student = await Student.findOne({ userId: req.user._id })
-    if (!student) {
-      return res.status(403).json({ success: false, message: 'Student profile not found.' })
-    }
-
     // AI semantic validation — pass disk path (multer disk storage, no buffer)
     const aiResult = await validateSemantic(req.file.path, description, category.name)
     if (!aiResult.valid && process.env.AI_ENABLED === 'true') {
@@ -65,10 +124,67 @@ async function submitComplaint(req, res, next) {
     // Only active, same-category nearby issues are candidates. The final
     // similarity decision is server-side so clients cannot bypass it.
     const candidates = await Complaint.find({ categoryId: category._id, status: { $in: ACTIVE_STATUSES }, isRepetitive: { $ne: true } }).lean()
-    const repetitiveMatch = findRepetitiveComplaint(candidates, { latitude: lat, longitude: lng, description })
+    const repetitiveMatch = findRepetitiveComplaint(candidates, {
+      latitude: lat, longitude: lng, description, locationDescription,
+    })
+
+    const alreadyReportedByStudent = repetitiveMatch && (
+      String(repetitiveMatch.complaint.studentId) === String(student._id) ||
+      await Complaint.exists({
+        studentId: student._id,
+        relatedComplaintId: repetitiveMatch.complaint._id,
+        isRepetitive: true,
+      })
+    )
+    if (alreadyReportedByStudent) {
+      await removeUploadedFile(req.file)
+      const ownMatches = candidates.filter((candidate) =>
+        String(candidate.studentId) === String(student._id) &&
+        Boolean(findRepetitiveComplaint([candidate], {
+          latitude: lat, longitude: lng, description, locationDescription,
+        }))
+      ).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+      const canonical = ownMatches[0] || repetitiveMatch.complaint
+      const duplicateIds = ownMatches
+        .filter((candidate) => String(candidate._id) !== String(canonical._id) && candidate.status === 'Reported' && !candidate.isRepetitive)
+        .map((candidate) => candidate._id)
+      if (duplicateIds.length) {
+        try {
+          await Complaint.updateMany({ _id: { $in: duplicateIds } }, {
+            $set: {
+              status: 'Repetitive', isRepetitive: true, duplicateSuppressed: true,
+              relatedComplaintId: canonical._id,
+              repetitiveReason: 'Duplicate submission from the same student; retained for audit but excluded from issue counts.',
+            },
+          })
+          await ComplaintStatusHistory.insertMany(duplicateIds.map((complaintId) => ({
+            complaintId, status: 'Repetitive', changedBy: req.user._id,
+            note: 'Duplicate submission from the same student was linked to the original report.',
+          })))
+        } catch (err) {
+          console.error('[DUPLICATE RECONCILIATION]', err.message)
+        }
+      }
+      const existingIssue = await getIssueSummary(canonical, category.name).catch(() => null)
+      return res.status(200).json({
+        success: true,
+        message: 'You have already reported this issue. It is being looked into.',
+        duplicate: true,
+        duplicateType: 'same_reporter',
+        existingIssue,
+        complaint: {
+          id: canonical._id,
+          status: canonical.status,
+          priority: canonical.priority,
+          isRepetitive: false,
+          relatedComplaintId: null,
+        },
+      })
+    }
 
     // Create complaint (repetitive reports are retained for RCA, without token/assignment)
-    const complaint = await Complaint.create({
+    const complaint = new Complaint({
+      _id: new mongoose.Types.ObjectId(),
       studentId: student._id,
       categoryId: category._id,
       description,
@@ -79,6 +195,7 @@ async function submitComplaint(req, res, next) {
       locationDescription: locationDescription.trim(),
       priority,
       imageValidation: aiResult,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       ...(repetitiveMatch ? {
         status: 'Repetitive', isRepetitive: true, relatedComplaintId: repetitiveMatch.complaint._id,
         repetitiveConfidence: repetitiveMatch.confidence,
@@ -86,61 +203,97 @@ async function submitComplaint(req, res, next) {
       } : {}),
     })
 
-    // Save complaint photo attachment
+    // Persist all required supporting records before the complaint itself.
+    // The complaint is the success marker, so a failed response never follows
+    // a partially saved complaint that would appear submitted to administrators.
     const fileUrl = `/uploads/${req.file.filename}`
-    await ComplaintAttachment.create({
-      complaintId: complaint._id,
-      fileUrl,
-      fileName: req.file.filename,
-      mimeType: req.file.mimetype,
-      sizeBytes: req.file.size,
-      attachmentType: 'complaint_photo',
-      uploadedBy: req.user._id,
-    })
-
-    // Initial status history
-    await ComplaintStatusHistory.create({
-      complaintId: complaint._id,
-      status: complaint.status,
-      changedBy: req.user._id,
-      note: repetitiveMatch ? 'Repetitive complaint linked to an active issue.' : 'Complaint submitted by student.',
-    })
-
-    // Notify student
-    await createNotification({
-      userId: req.user._id,
-      complaintId: complaint._id,
-      title: 'Complaint Submitted',
-      message: repetitiveMatch ? 'Your report was recorded and linked to an issue already being processed in this area. No separate token was generated.' : `Your complaint about ${category.name} has been submitted and is awaiting verification.`,
-      type: repetitiveMatch ? 'repetitive_complaint' : 'complaint_submitted',
-    })
-    const User = require('../models/User')
-    const admins = await User.find({ role: 'admin', isActive: true }).select('_id').lean()
-    await Promise.all(admins.flatMap((admin) => repetitiveMatch ? [
-      createNotification({ userId: admin._id, complaintId: complaint._id, title: 'Repetitive Complaint Reported', message: 'A new report was linked to an active ' + category.name + ' complaint.', type: 'repetitive_complaint' }),
-    ] : [
-      createNotification({ userId: admin._id, complaintId: complaint._id, title: 'New Complaint Received', message: 'A new ' + category.name + ' complaint requires verification.', type: 'complaint_submitted' }),
-      createNotification({ userId: admin._id, complaintId: complaint._id, title: 'Complaint Requires Verification', message: 'Review the submitted complaint and approve or reject it.', type: 'complaint_submitted' }),
-    ]))
-    if (repetitiveMatch) {
-      await Complaint.findByIdAndUpdate(repetitiveMatch.complaint._id, { $inc: { repetitiveCount: 1 } })
-      const assignment = await ComplaintAssignment.findOne({ complaintId: repetitiveMatch.complaint._id, isActive: true }).populate('staffId', 'userId')
-      if (assignment?.staffId?.userId) await createNotification({ userId: assignment.staffId.userId, complaintId: repetitiveMatch.complaint._id, title: 'Additional Report Received', message: 'Another student reported a similar issue in your assigned area.', type: 'repetitive_complaint' })
+    try {
+      await ComplaintAttachment.create({
+        complaintId: complaint._id,
+        fileUrl,
+        fileName: req.file.filename,
+        mimeType: req.file.mimetype,
+        sizeBytes: req.file.size,
+        attachmentType: 'complaint_photo',
+        uploadedBy: req.user._id,
+      })
+      await ComplaintStatusHistory.create({
+        complaintId: complaint._id,
+        status: complaint.status,
+        changedBy: req.user._id,
+        note: repetitiveMatch ? 'Repetitive complaint linked to an active issue.' : 'Complaint submitted by student.',
+      })
+      await complaint.save()
+    } catch (err) {
+      await Promise.all([
+        ComplaintAttachment.deleteMany({ complaintId: complaint._id }).catch(() => {}),
+        ComplaintStatusHistory.deleteMany({ complaintId: complaint._id }).catch(() => {}),
+        removeUploadedFile(req.file),
+      ])
+      if (err.code !== 11000 || !idempotencyKey) throw err
+      const prior = await Complaint.findOne({ studentId: student._id, idempotencyKey }).lean()
+      if (!prior) throw err
+      const related = prior.isRepetitive
+        ? await Complaint.findById(prior.relatedComplaintId).populate('categoryId', 'name').lean()
+        : null
+      const existingIssue = related ? await getIssueSummary(related, related.categoryId?.name).catch(() => null) : null
+      return res.status(200).json(submittedResponse(prior, {
+        message: prior.isRepetitive
+          ? 'This issue has already been reported by another student, and it is being looked into.'
+          : 'Your complaint was submitted successfully and is awaiting administrator verification.',
+        duplicate: Boolean(prior.isRepetitive),
+        duplicateType: prior.isRepetitive ? 'other_reporter' : undefined,
+        existingIssue,
+      }))
     }
 
-    res.status(201).json({
-      success: true,
-      message: repetitiveMatch ? 'Repetitive complaint recorded and linked to the active issue.' : 'Complaint submitted successfully. Awaiting administrator verification.',
-      complaint: {
-        id: complaint._id,
-        status: complaint.status,
-        priority: complaint.priority,
-        imageValidation: aiResult.flaggedForReview
-          ? { flaggedForReview: true, reason: aiResult.reason }
-          : { flaggedForReview: false },
-        isRepetitive: Boolean(repetitiveMatch), relatedComplaintId: repetitiveMatch?.complaint._id || null,
-      },
-    })
+    const existingIssue = repetitiveMatch
+      ? await getIssueSummary(repetitiveMatch.complaint, category.name).catch(() => null)
+      : null
+    res.status(201).json(submittedResponse(complaint, {
+      message: repetitiveMatch
+        ? 'This issue has already been reported by another student, and it is being looked into.'
+        : 'Complaint submitted successfully. Awaiting administrator verification.',
+      duplicate: Boolean(repetitiveMatch),
+      duplicateType: repetitiveMatch ? 'other_reporter' : undefined,
+      existingIssue,
+    }))
+
+    // Notification failures must never turn a successfully stored complaint
+    // into a failure response that prompts a student to submit it again.
+    Promise.resolve().then(async () => {
+      await createNotification({
+        userId: req.user._id,
+        complaintId: complaint._id,
+        title: repetitiveMatch ? 'Additional Issue Reported' : 'Complaint Submitted',
+        message: repetitiveMatch
+          ? 'Your report was linked to an issue another student already reported. It is being looked into.'
+          : `Your complaint about ${category.name} has been submitted and is awaiting verification.`,
+        type: repetitiveMatch ? 'repetitive_complaint' : 'complaint_submitted',
+      })
+      const User = require('../models/User')
+      const admins = await User.find({ role: 'admin', isActive: true }).select('_id').lean()
+      await Promise.all(admins.map((admin) => createNotification({
+        userId: admin._id,
+        complaintId: complaint._id,
+        title: repetitiveMatch ? 'Repetitive Complaint Reported' : 'New Complaint Received',
+        message: repetitiveMatch
+          ? `A student reported an additional ${category.name} issue that matches an active complaint.`
+          : `A new ${category.name} complaint requires verification.`,
+        type: repetitiveMatch ? 'repetitive_complaint' : 'complaint_submitted',
+      })))
+      if (repetitiveMatch) {
+        await Complaint.findByIdAndUpdate(repetitiveMatch.complaint._id, { $inc: { repetitiveCount: 1 } })
+        const assignment = await ComplaintAssignment.findOne({ complaintId: repetitiveMatch.complaint._id, isActive: true }).populate('staffId', 'userId')
+        if (assignment?.staffId?.userId) await createNotification({
+          userId: assignment.staffId.userId,
+          complaintId: repetitiveMatch.complaint._id,
+          title: 'Additional Report Received',
+          message: 'Another student reported a similar issue in your assigned area.',
+          type: 'repetitive_complaint',
+        })
+      }
+    }).catch((err) => console.error('[COMPLAINT FOLLOW-UP]', err.message))
   } catch (err) {
     next(err)
   }

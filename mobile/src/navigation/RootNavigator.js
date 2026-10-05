@@ -43,7 +43,7 @@ function AppTabs() {
     >
       <Tab.Screen name="Home" component={DashboardScreen} />
       <Tab.Screen name="Complaints" component={MyComplaintsScreen} />
-      <Tab.Screen name="Events" component={EventsScreen} />
+      <Tab.Screen name="Events" component={EventsScreen} options={{ title: 'Sustainability Events', tabBarLabel: 'Sustainability Events' }} />
       <Tab.Screen name="Notifications" component={NotificationsScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
@@ -56,7 +56,7 @@ function AppStack() {
       <Stack.Screen name="Tabs" component={AppTabs} />
       <Stack.Screen name="ReportComplaint" component={ReportComplaintScreen} options={{ headerShown: true, title: 'Report Issue', headerTintColor: COLORS.primary }} />
       <Stack.Screen name="ComplaintDetail" component={ComplaintDetailScreen} options={{ headerShown: true, title: 'Complaint Details', headerTintColor: COLORS.primary }} />
-      <Stack.Screen name="EventDetail" component={EventDetailScreen} options={{ headerShown: true, title: 'Event Details', headerTintColor: COLORS.primary }} />
+      <Stack.Screen name="EventDetail" component={EventDetailScreen} options={{ headerShown: true, title: 'Sustainability Event Details', headerTintColor: COLORS.primary }} />
     </Stack.Navigator>
   )
 }

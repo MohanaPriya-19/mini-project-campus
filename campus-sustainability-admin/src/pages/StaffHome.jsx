@@ -18,8 +18,12 @@ function getBrowserPosition() {
     if (!navigator.geolocation) return reject(new Error('This browser does not support location services.'))
     navigator.geolocation.getCurrentPosition(
       (position) => resolve(position.coords),
-      () => reject(new Error('Location permission is required to submit resolution proof.')),
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 },
+      (error) => reject(new Error({
+        1: 'Allow location access in your browser, then try again.',
+        2: 'Your device could not determine its location. Turn on GPS or Wi-Fi location and try again.',
+        3: 'Location lookup timed out. Move near a window or outdoors and try again.',
+      }[error.code] || 'Unable to get your current location.')),
+      { enableHighAccuracy: true, timeout: 45000, maximumAge: 0 },
     )
   })
 }

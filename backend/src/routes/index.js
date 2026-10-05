@@ -98,7 +98,18 @@ router.get('/admin/complaints/:id', authenticate, requireRole('admin'), async (r
         : null,
       ComplaintStatusHistory.find({ complaintId: complaint._id }).sort({ createdAt: 1 }).lean(),
     ])
-    res.json({ success: true, complaint: { ...complaint, attachments, assignment, history } })
+    let relatedComplaint = null
+    let relatedComplaintAttachments = []
+    if (complaint.relatedComplaintId) {
+      [relatedComplaint, relatedComplaintAttachments] = await Promise.all([
+        Complaint.findById(complaint.relatedComplaintId)
+          .populate('categoryId', 'name')
+          .populate('studentId', 'rollNumber name department')
+          .lean(),
+        ComplaintAttachment.find({ complaintId: complaint.relatedComplaintId, attachmentType: 'complaint_photo' }).lean(),
+      ])
+    }
+    res.json({ success: true, complaint: { ...complaint, attachments, assignment, history, relatedComplaint, relatedComplaintAttachments } })
   } catch (err) { next(err) }
 })
 

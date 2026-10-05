@@ -14,6 +14,9 @@ const complaintSchema = new mongoose.Schema(
     status: { type: String, enum: STATUSES, default: 'Reported' },
     priority: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Medium' },
     tokenId: { type: String, unique: true, sparse: true },
+    // Client-generated key makes retries safe when an upload succeeds but its
+    // response is lost or times out on a mobile connection.
+    idempotencyKey: { type: String, unique: true, sparse: true, maxlength: 100 },
 
     // Location snapshot at submission time
     latitude: { type: Number, required: true },
@@ -41,6 +44,7 @@ const complaintSchema = new mongoose.Schema(
     // Repetitive reports stay auditable but never receive an independent token
     relatedComplaintId: { type: mongoose.Schema.Types.ObjectId, ref: 'Complaint', default: null },
     isRepetitive: { type: Boolean, default: false },
+    duplicateSuppressed: { type: Boolean, default: false },
     repetitiveCount: { type: Number, default: 0, min: 0 },
     repetitiveReason: { type: String, trim: true },
     repetitiveConfidence: { type: Number, min: 0, max: 1 },

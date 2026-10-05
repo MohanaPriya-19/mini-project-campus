@@ -1,13 +1,13 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  TextInput, Image, Alert, ActivityIndicator,
+  TextInput, Image, Alert, ActivityIndicator, Modal,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import api from '../services/api'
-import { COLORS, CATEGORIES } from '../constants/config'
+import { API_BASE_URL, COLORS, CATEGORIES } from '../constants/config'
 
 const MAX_DESC_LENGTH = 1000
 const LOCATION_TOTAL_TIMEOUT_MS = 30000
@@ -100,7 +100,9 @@ export default function ReportComplaintScreen({ navigation }) {
   const [aiValidation, setAiValidation] = useState(null) // { level, reason, flaggedForReview }
   const [aiChecking, setAiChecking] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [duplicateIssue, setDuplicateIssue] = useState(null)
   const [errors, setErrors] = useState({})
+  const submissionKey = useRef(null)
 
   // ── Image ──────────────────────────────────────────────────────────────────
 
@@ -292,10 +294,23 @@ export default function ReportComplaintScreen({ navigation }) {
       formData.append('gpsAccuracy', String(location.accuracy))
       formData.append('image', { uri: image.uri, type: image.type, name: image.name })
 
+      if (!submissionKey.current) {
+        submissionKey.current = `complaint-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      }
       const res = await api.post('/api/complaints', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+        headers: { 'Content-Type': 'multipart/form-data', 'Idempotency-Key': submissionKey.current },
       })
 
+      submissionKey.current = null
+      if (res.data.duplicate && res.data.duplicateType === 'same_reporter') {
+        Alert.alert('Already Reported', res.data.message, [{ text: 'OK', onPress: () => navigation.navigate('Complaints') }])
+        return
+      }
+      if (res.data.duplicate && res.data.existingIssue) {
+        setDuplicateIssue(res.data.existingIssue)
+        return
+      }
       Alert.alert(
         'Complaint Submitted Successfully',
         res.data.message || 'Your complaint has been submitted and is awaiting verification.',
@@ -519,6 +534,20 @@ export default function ReportComplaintScreen({ navigation }) {
           </Text>
         )}
       </TouchableOpacity>
+      <Modal visible={Boolean(duplicateIssue)} transparent animationType="fade" onRequestClose={() => setDuplicateIssue(null)}>
+        <View style={styles.duplicateOverlay}>
+          <View style={styles.duplicateCard}>
+            <Text style={styles.duplicateTitle}>Already reported by another student</Text>
+            <Text style={styles.duplicateMessage}>This issue has been reported already by another student, and it is being looked into.</Text>
+            {duplicateIssue?.imageUrl ? <Image source={{ uri: `${API_BASE_URL}${duplicateIssue.imageUrl}` }} style={styles.duplicateImage} resizeMode="cover" /> : null}
+            <Text style={styles.duplicateMeta}>{duplicateIssue?.category} · {duplicateIssue?.status}</Text>
+            <Text style={styles.duplicateDescription}>{duplicateIssue?.description}</Text>
+            <TouchableOpacity style={styles.submitBtn} onPress={() => { setDuplicateIssue(null); navigation.navigate('Complaints') }}>
+              <Text style={styles.submitBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       <Text style={styles.submitHint}>
         Your complaint will be reviewed by an administrator before a token ID is issued.
@@ -590,5 +619,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginTop: 24,
   },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  duplicateOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.65)', justifyContent: 'center', padding: 24 },
+  duplicateCard: { backgroundColor: '#fff', borderRadius: 18, padding: 20, maxHeight: '85%' },
+  duplicateTitle: { color: COLORS.primary, fontSize: 19, fontWeight: '800', marginBottom: 8 },
+  duplicateMessage: { color: COLORS.text, fontSize: 15, lineHeight: 21, marginBottom: 14 },
+  duplicateImage: { width: '100%', height: 190, borderRadius: 12, backgroundColor: COLORS.background, marginBottom: 12 },
+  duplicateMeta: { color: COLORS.primary, fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  duplicateDescription: { color: COLORS.textSecondary, fontSize: 14, lineHeight: 20, marginBottom: 16 },
   submitHint: { color: COLORS.textSecondary, fontSize: 12, textAlign: 'center', marginTop: 10 },
 })

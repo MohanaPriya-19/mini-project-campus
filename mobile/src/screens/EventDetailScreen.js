@@ -46,7 +46,7 @@ export default function EventDetailScreen({ route }) {
       {/* Description */}
       {event.description && (
         <View style={styles.card}>
-          <Text style={styles.sectionTitle}>About This Event</Text>
+          <Text style={styles.sectionTitle}>About This Sustainability Event</Text>
           <Text style={styles.description}>{event.description}</Text>
         </View>
       )}

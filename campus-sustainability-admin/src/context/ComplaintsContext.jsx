@@ -20,8 +20,15 @@ export function ComplaintsProvider({ children }) {
         const { tasks } = await api.get('/staff/tasks')
         setComplaints(tasks.map((task) => normalizeComplaint({ ...task.complaintId, assignment: task })))
       } else {
-        const { complaints: list } = await api.get('/admin/complaints?limit=100')
-        setComplaints(list.map(normalizeComplaint))
+        const pageSize = 100
+        const firstPage = await api.get(`/admin/complaints?limit=${pageSize}&page=1`)
+        const all = [...firstPage.complaints]
+        const pageCount = Math.ceil(firstPage.total / pageSize)
+        for (let page = 2; page <= pageCount; page += 1) {
+          const result = await api.get(`/admin/complaints?limit=${pageSize}&page=${page}`)
+          all.push(...result.complaints)
+        }
+        setComplaints(all.map(normalizeComplaint))
       }
     } catch (err) { setError(err.message) } finally { setLoading(false) }
   }, [user])

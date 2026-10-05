@@ -35,7 +35,7 @@ function pointInPolygon(lat, lng, polygon) {
   return inside
 }
 
-function verifyLocation(latitude, longitude, accuracy) {
+function verifyLocation(latitude, longitude, accuracy, options = {}) {
   if (latitude == null || longitude == null) {
     return { locationVerified: false, message: 'Location coordinates are missing.' }
   }
@@ -47,6 +47,9 @@ function verifyLocation(latitude, longitude, accuracy) {
   if (!Number.isFinite(accuracyMeters) || accuracyMeters < 0) {
     return { locationVerified: false, message: 'GPS accuracy is unavailable. Please move to an open area and try again.' }
   }
+  const maxAccuracyMeters = Number(options.maxAccuracyMeters) > 0
+    ? Number(options.maxAccuracyMeters)
+    : MAX_GPS_ACCURACY
 
   let isInside = false
   let distanceMeters = null
@@ -75,11 +78,11 @@ function verifyLocation(latitude, longitude, accuracy) {
     allowedRadiusMeters: LOCATION_MODE === 'radius' ? CAMPUS_RADIUS : null,
   }
 
-  if (accuracyMeters > MAX_GPS_ACCURACY) {
+  if (accuracyMeters > maxAccuracyMeters) {
     return {
       ...result,
       locationVerified: false,
-      message: 'GPS accuracy is too low. Please move to an open area and try again.',
+      message: `GPS accuracy is too low (${Math.round(accuracyMeters)} m). The maximum allowed for this check is ${Math.round(maxAccuracyMeters)} m.`,
     }
   }
 

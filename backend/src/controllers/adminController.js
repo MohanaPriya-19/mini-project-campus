@@ -49,6 +49,11 @@ async function listComplaints(req, res, next) {
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
       .lean()
+    const complaintPhotos = await ComplaintAttachment.find({
+      complaintId: { $in: complaints.map((item) => item._id) },
+      attachmentType: 'complaint_photo',
+    }).select('complaintId fileUrl').lean()
+    const photoByComplaint = new Map(complaintPhotos.map((photo) => [String(photo.complaintId), photo.fileUrl]))
 
     // Do not surface a stale assignment for a complaint that has not passed
     // administrator verification. The write endpoint enforces this too.
@@ -62,7 +67,11 @@ async function listComplaints(req, res, next) {
     const total = await Complaint.countDocuments(filter)
     res.json({
       success: true,
-      complaints: complaints.map((complaint) => ({ ...complaint, assignment: assignmentByComplaint.get(String(complaint._id)) || null })),
+      complaints: complaints.map((complaint) => ({
+        ...complaint,
+        photoUrl: photoByComplaint.get(String(complaint._id)) || null,
+        assignment: assignmentByComplaint.get(String(complaint._id)) || null,
+      })),
       total,
       page: parseInt(page),
       limit: parseInt(limit),
@@ -171,7 +180,9 @@ async function assignComplaint(req, res, next) {
     const { staffId, deadline } = req.body
     const complaint = await Complaint.findById(req.params.id)
     if (!complaint) return res.status(404).json({ success: false, message: 'Complaint not found.' })
-    if (!['Verified', 'Reassigned', 'Unable to Resolve'].includes(complaint.status)) {
+    const currentAssignment = await ComplaintAssignment.findOne({ complaintId: complaint._id, isActive: true })
+    const extensionLimitReached = currentAssignment && currentAssignment.deadlineExtensions.length >= 5
+    if (!['Verified', 'Reassigned', 'Unable to Resolve'].includes(complaint.status) && !(['Deadline Extended', 'Overdue'].includes(complaint.status) && extensionLimitReached)) {
       return res.status(400).json({ success: false, message: 'Complaint must be verified before assignment.' })
     }
 
@@ -242,9 +253,8 @@ async function extendDeadline(req, res, next) {
     if (!assignment) return res.status(404).json({ success: false, message: 'No active assignment found.' })
     if (!note || !note.trim()) return res.status(400).json({ success: false, message: 'An extension reason is required.' })
     if (assignment.deadlineExtensions.length >= 5) {
-      return res.status(400).json({ success: false, message: 'Maximum of five deadline extensions reached. Staff must mark the task unable to resolve if it remains open.' })
+      return res.status(400).json({ success: false, message: 'This assignment has reached its five deadline extensions. Reassign the complaint to continue.' })
     }
-
     const oldDeadline = assignment.deadline
     const newDeadline = new Date(deadline)
     if (Number.isNaN(newDeadline.getTime()) || newDeadline <= oldDeadline || newDeadline <= new Date()) {

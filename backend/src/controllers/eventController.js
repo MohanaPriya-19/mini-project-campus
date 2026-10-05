@@ -38,7 +38,7 @@ async function createEvent(req, res, next) {
       const students = await User.find({ role: 'student', isActive: true }).select('_id').lean()
       await Promise.all(students.map((student) => createNotification({
         userId: student._id, eventId: event._id, title: 'New Sustainability Event',
-        message: `A new event, "${event.title}", has been published.`, type: 'event_published',
+        message: `A new sustainability event, "${event.title}", has been published.`, type: 'event_published',
       })))
     }
     res.status(201).json({ success: true, event })
@@ -60,8 +60,8 @@ async function updateEvent(req, res, next) {
         await createNotification({
           userId: s._id,
           eventId: event._id,
-          title: 'Event Cancelled',
-          message: `The event "${event.title}" has been cancelled.`,
+          title: 'Sustainability Event Cancelled',
+          message: `The sustainability event "${event.title}" has been cancelled.`,
           type: 'event_cancelled',
         })
       }
@@ -71,8 +71,8 @@ async function updateEvent(req, res, next) {
         await createNotification({
           userId: s._id,
           eventId: event._id,
-          title: 'Event Updated',
-          message: `The event "${event.title}" has been updated.`,
+          title: 'Sustainability Event Updated',
+          message: `The sustainability event "${event.title}" has been updated.`,
           type: 'event_updated',
         })
       }
