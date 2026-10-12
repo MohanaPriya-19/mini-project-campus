@@ -2,7 +2,7 @@ const multer = require('multer')
 const path = require('path')
 const { v4: uuidv4 } = require('uuid')
 
-const MAX_SIZE = parseFloat(process.env.IMAGE_MAX_SIZE_MB || '5') * 1024 * 1024
+const MAX_SIZE = 20 * 1024
 const ALLOWED = (process.env.ALLOWED_IMAGE_TYPES || 'image/jpeg,image/png,image/jpg')
   .split(',')
   .map((t) => t.trim())

@@ -183,6 +183,7 @@ Index: `{ isPublished: 1, isCancelled: 1, date: 1 }`.
 
 - MongoDB does not enforce the `ref` relationships as foreign keys. The API is responsible for access checks and maintaining related records.
 - Complaint and resolution images are stored under `backend/uploads`; `ComplaintAttachment` holds their database metadata.
+- Every uploaded image is limited to 20 KB.
 - Duplicate matching requires the same category, normalized room/landmark text, nearby GPS coordinates, and similar descriptions. Reports in separate rooms or labs remain separate issues.
 - The RCA dashboard computes its recommendation from complaint category, location, description, status, and repeat history; it is not stored as a separate collection.
 - The schema describes the Mongoose models currently in `backend/src/models`.

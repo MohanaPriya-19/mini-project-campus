@@ -5,8 +5,8 @@
  *  - In Expo Go (dev), Expo embeds the dev-server host in the manifest.
  *    We extract that host and point port 5001 at it.
  *    This means the app works on ANY network without ever changing this file.
- *  - In a production/EAS build, set EXPO_PUBLIC_API_URL in your EAS
- *    environment variables and it will be used instead.
+ *  - For a distributable build, set EXPO_PUBLIC_API_URL to the public HTTPS
+ *    backend URL in the EAS environment used for the build.
  */
 import Constants from 'expo-constants'
 
@@ -15,7 +15,6 @@ function normalizeApiUrl(value) {
   const url = value.trim().replace(/\/$/, '')
   if (!/^https?:\/\/[^/]+(?::\d+)?(?:\/.*)?$/.test(url)) return null
   if (/\/\/(localhost|127\.0\.0\.1)(?::|\/|$)/i.test(url)) return null
-  if (!/:5001(?:\/|$)/.test(url)) return null
   return url
 }
 
@@ -43,7 +42,7 @@ function resolveApiUrl() {
 
 export const API_BASE_URL = resolveApiUrl()
 export const API_CONFIGURATION_ERROR =
-  'Backend address is not configured. Set EXPO_PUBLIC_API_URL to your laptop LAN URL on port 5001, then rebuild the APK.'
+  'The app server is not configured. Set EXPO_PUBLIC_API_URL to your deployed HTTPS backend URL and rebuild the app.'
 
 export const CATEGORIES = ['Water', 'Infrastructure', 'Electrical', 'Waste', 'Cleanliness']
 

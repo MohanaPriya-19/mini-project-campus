@@ -4,12 +4,14 @@ import {
   TextInput, Image, Alert, ActivityIndicator, Modal,
 } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
+import * as FileSystem from 'expo-file-system'
 import * as Location from 'expo-location'
 import { Ionicons } from '@expo/vector-icons'
 import api from '../services/api'
 import { API_BASE_URL, COLORS, CATEGORIES } from '../constants/config'
 
 const MAX_DESC_LENGTH = 1000
+const MAX_IMAGE_BYTES = 20 * 1024
 const LOCATION_TOTAL_TIMEOUT_MS = 30000
 const LOCATION_READING_TIMEOUT_MS = 10000
 const LOCATION_READING_COUNT = 3
@@ -114,10 +116,15 @@ export default function ReportComplaintScreen({ navigation }) {
     }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
+      quality: 0.15,
     })
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0]
+      const fileInfo = await FileSystem.getInfoAsync(asset.uri)
+      if ((asset.fileSize ?? fileInfo.size) > MAX_IMAGE_BYTES) {
+        Alert.alert('Image Too Large', 'Choose an image that is 20 KB or smaller.')
+        return
+      }
       setImage({
         uri: asset.uri,
         type: asset.mimeType || 'image/jpeg',
@@ -137,10 +144,15 @@ export default function ReportComplaintScreen({ navigation }) {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
+      quality: 0.15,
     })
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0]
+      const fileInfo = await FileSystem.getInfoAsync(asset.uri)
+      if ((asset.fileSize ?? fileInfo.size) > MAX_IMAGE_BYTES) {
+        Alert.alert('Image Too Large', 'Choose an image that is 20 KB or smaller.')
+        return
+      }
       setImage({
         uri: asset.uri,
         type: asset.mimeType || 'image/jpeg',
@@ -451,7 +463,7 @@ export default function ReportComplaintScreen({ navigation }) {
 
       {/* Image */}
       <Text style={styles.label}>Photo <Text style={styles.required}>*</Text></Text>
-      <Text style={styles.hint}>First verify your campus location, then capture or select a photo of the issue.</Text>
+      <Text style={styles.hint}>Verify your campus location first. Photos must be 20 KB or smaller; larger files are rejected.</Text>
       {image ? (
         <View style={styles.imagePreviewBox}>
           <Image source={{ uri: image.uri }} style={styles.imagePreview} />

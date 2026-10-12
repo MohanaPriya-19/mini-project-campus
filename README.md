@@ -70,7 +70,6 @@ CAMPUS_LONGITUDE=77.0066
 CAMPUS_RADIUS_METERS=800
 LOCATION_MODE=radius
 STAFF_GPS_MAX_ACCURACY_METERS=250
-IMAGE_MAX_SIZE_MB=5
 ALLOWED_IMAGE_TYPES=image/jpeg,image/png,image/jpg
 UPLOAD_STORAGE=local
 AI_ENABLED=false
@@ -112,16 +111,11 @@ cd campus-grievance-new/mobile
 npm install
 ```
 
-Edit `src/constants/config.js` — set `API_BASE_URL` to your backend:
-
-```js
-// For physical device testing, use your machine's local IP
-export const API_BASE_URL = 'http://192.168.x.x:5001'
-
-// For emulator
-export const API_BASE_URL = 'http://10.0.2.2:5001'   // Android emulator
-export const API_BASE_URL = 'http://localhost:5001'   // iOS simulator
-```
+For Expo Go development, the app can discover the backend on the same Wi-Fi
+network as the Expo development server. For a shared installable build, the
+backend must be deployed at a public HTTPS address. Set
+`EXPO_PUBLIC_API_URL` to that address in the mobile EAS build environment.
+A private laptop address only works for phones on that same network.
 
 Start the app:
 
@@ -229,6 +223,10 @@ Change `LOCATION_MODE=polygon` and set `CAMPUS_POLYGON_JSON` for polygon-based g
 
 ## Image AI Validation
 
+All uploaded images (complaint photos, validation photos, and resolution proof)
+are limited to 20 KB. Oversized images are rejected by the backend; this limit
+is fixed and does not need an environment variable.
+
 Currently runs in **mock mode** (`AI_ENABLED=false`).
 
 To enable real AI validation:
@@ -253,38 +251,47 @@ A cron job runs every hour and automatically marks complaints as `Overdue` when 
 
 ## Deployment
 
-### Backend — Render
+Deploy in this order so the web admin and APK can be configured with the live API URL.
 
-1. Push `campus-grievance-new/backend` to a new GitHub repository
-2. Create a new Web Service on [render.com](https://render.com)
-3. Set build command: `npm install`
-4. Set start command: `node server.js`
-5. Add all environment variables from `.env.example`
-6. Set `NODE_ENV=production`
+### 1. Publish the repository
 
-### Database — MongoDB Atlas
+Push the project to a Git provider account connected to Render, Vercel, and Expo EAS.
 
-1. Create a new Atlas cluster (free tier M0)
-2. Create a new database user
-3. Whitelist `0.0.0.0/0` for Render (or use Render's static IP)
-4. Copy the connection string to `MONGODB_URI`
-5. Run seed: `node src/utils/seed.js` (once, with production URI)
+### 2. Create MongoDB Atlas
 
-### Mobile — Expo EAS Build
+1. Create an Atlas project and cluster, then create a database user with access to this app's database.
+2. Add the Render service's outbound IP ranges from its Render **Connect → Outbound** panel to the Atlas project IP access list. Do not allow all internet addresses.
+3. Copy the Atlas `mongodb+srv://` connection string; it will be used as `MONGODB_URI`.
 
-```bash
-npm install -g eas-cli
-eas login
-eas build --platform android
-```
+### 3. Deploy the backend to Render
 
-Update `API_BASE_URL` in `src/constants/config.js` to your Render backend URL before building.
+1. Create a Render Web Service connected to this repository. Set **Root Directory** to `backend`, **Build Command** to `npm install`, and **Start Command** to `npm start`.
+2. Set **Health Check Path** to `/health`.
+3. Add environment variables from `backend/.env.example`. Set `NODE_ENV=production`, `MONGODB_URI` to the Atlas URI, and `JWT_SECRET` to a newly generated random secret of at least 32 characters. Keep `AI_ENABLED=false` and `AI_PROVIDER=mock` unless a production image-validation provider is configured.
+4. Complaint and resolution images are stored on disk. Attach a persistent disk mounted at `/opt/render/project/src/uploads` for the current local upload storage. Render free services have ephemeral filesystems, so uploaded photos would be lost on restart or redeploy without persistent/object storage.
+5. Deploy and confirm `https://<your-service>.onrender.com/health` returns `{"status":"ok"...}`. Save the service's HTTPS origin for the next steps.
 
-### Admin UI — Vercel / Netlify
+### 4. Initialize production data
 
-1. Push `campus-sustainability-admin` to GitHub
-2. Deploy on Vercel or Netlify
-3. Set environment variable: `VITE_API_URL=https://your-backend.render.com`
+Run `node src/utils/seed.js` once from the `backend` directory with the production `MONGODB_URI` to create the categories and priority rules. The current seed script also creates demo accounts with published default passwords (`admin123`, `student123`, and `staff123`); remove or replace those accounts/passwords before opening the production service to users. Keep the database URI and JWT secret private and never commit `.env` files.
+
+### 5. Deploy the admin web app
+
+1. Create a Vercel project connected to this repository and set its **Root Directory** to `campus-sustainability-admin`.
+2. Set `VITE_API_URL=https://<your-service>.onrender.com/api` in the Vercel production environment, then deploy. Vercel detects the Vite build (`npm run build`, output `dist`).
+3. Copy the deployed admin site's origin (for example, `https://campus-admin.example.com`) into Render's `FRONTEND_URL` environment variable. Use the origin only, with no `/api` path, then redeploy the backend.
+
+### 6. Build and distribute the Android APK
+
+1. In the Expo EAS project, add `EXPO_PUBLIC_API_URL=https://<your-service>.onrender.com` to the `production` environment.
+2. From the `mobile` directory, run:
+
+   ```bash
+   npx eas-cli login
+   npx eas-cli build --platform android --profile apk --environment production
+   ```
+
+3. Download the completed APK from the EAS build page and share it with Android users. It targets Android 6.0 (API 23) and newer. iPhones require a separate iOS build; an APK cannot be installed on iOS.
 
 ---
 

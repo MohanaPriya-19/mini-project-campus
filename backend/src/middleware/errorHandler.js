@@ -3,7 +3,7 @@ function errorHandler(err, req, res, next) {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({
       success: false,
-      message: `Image size must be under ${process.env.IMAGE_MAX_SIZE_MB || 5}MB.`,
+      message: 'Image size must be 20 KB or less.',
     })
   }
 

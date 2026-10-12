@@ -12,7 +12,7 @@ const path = require('path')
 const sharp = require('sharp')
 const { validateComplaintWithVisionModel } = require('./ollamaVisionService')
 
-const MAX_SIZE_BYTES = parseFloat(process.env.IMAGE_MAX_SIZE_MB || '5') * 1024 * 1024
+const MAX_SIZE_BYTES = 20 * 1024
 const ALLOWED_TYPES = (process.env.ALLOWED_IMAGE_TYPES || 'image/jpeg,image/png,image/jpg')
   .split(',')
   .map((t) => t.trim())
@@ -25,7 +25,7 @@ async function validateTechnical(file) {
     return { valid: false, reason: `Image must be JPEG or PNG. Received: ${file.mimetype}` }
   }
   if (file.size > MAX_SIZE_BYTES) {
-    return { valid: false, reason: `Image size must be under ${process.env.IMAGE_MAX_SIZE_MB || 5}MB.` }
+    return { valid: false, reason: 'Image size must be 20 KB or less.' }
   }
   // Integrity check — sharp will throw if the file is corrupt/truncated
   try {
