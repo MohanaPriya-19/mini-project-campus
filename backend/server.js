@@ -75,8 +75,10 @@ app.use('/api/auth', authRoutes)
 app.use('/api/complaints', complaintRoutes)
 app.use('/api', routes)
 
-// Health check
-app.get('/health', (req, res) => res.json({ status: 'ok', project: 'campus-grievance-new' }))
+// Health checks for Render and anyone opening the service URL directly.
+const healthCheck = (req, res) => res.json({ status: 'ok', project: 'campus-grievance-new' })
+app.get('/', healthCheck)
+app.get('/health', healthCheck)
 
 // 404
 app.use((req, res) => res.status(404).json({ success: false, message: 'Endpoint not found.' }))
